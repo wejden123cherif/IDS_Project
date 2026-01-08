@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Panel - Vulnerability Detector{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h2>Admin Control Panel</h2>
+        <div class="monitoring-status">
+            <span class="status-label">Monitoring Status:</span>
+            <span class="status-indicator status-{{ 'active' if monitoring_status else 'inactive' }}">
+                {{ 'ACTIVE' if monitoring_status else 'INACTIVE' }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+        <h3>Monitoring Controls</h3>
+        <div class="controls-grid">
+            <!-- Interface selection removed as requested, using auto-detect -->
+            <button onclick="startMonitoring()" class="btn btn-success" id="start-btn">
+                ▶️ Start Monitoring
+            </button>
+            <button onclick="stopMonitoring()" class="btn btn-danger" id="stop-btn">
+                ⏹️ Stop Monitoring
+            </button>
+            <button onclick="clearAlerts()" class="btn btn-warning">
+                🗑️ Clear All Alerts
+            </button>
+            <button onclick="clearStats()" class="btn btn-warning">
+                📊 Reset Statistics
+            </button>
+        </div>
+    </div>
+
+    <!-- Configuration Settings -->
+    <div class="config-panel">
+        <h3>Detection Configuration</h3>
+        <form id="config-form" onsubmit="updateConfig(event)">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="syn-threshold">SYN Flood Threshold (packets):</label>
+                    <input type="number" id="syn-threshold" name="syn_threshold"
+                        value="{{ config.SYN_FLOOD_THRESHOLD }}" min="10" max="10000">
+                </div>
+                <div class="form-group">
+                    <label for="time-window">SYN Time Window (seconds):</label>
+                    <input type="number" id="time-window" name="time_window" value="{{ config.SYN_FLOOD_TIME_WINDOW }}"
+                        min="1" max="60">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="arp-threshold">ARP Flood Threshold (packets):</label>
+                    <input type="number" id="arp-threshold" name="arp_threshold"
+                        value="{{ config.get('ARP_FLOOD_THRESHOLD', 30) }}" min="5" max="1000">
+                </div>
+                <div class="form-group">
+                    <label for="arp-time-window">ARP Time Window (seconds):</label>
+                    <input type="number" id="arp-time-window" name="arp_time_window" 
+                        value="{{ config.get('ARP_FLOOD_TIME_WINDOW', 5) }}" min="1" max="60">
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary">Update Configuration</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-info">
+                <h3>Total Packets</h3>
+                <p class="stat-number" id="total-packets">{{ stats.total_packets or 0 }}</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">🔗</div>
+            <div class="stat-info">
+                <h3>ARP Packets</h3>
+                <p class="stat-number" id="arp-packets">{{ stats.arp_packets or 0 }}</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">🌐</div>
+            <div class="stat-info">
+                <h3>TCP Packets</h3>
+                <p class="stat-number" id="tcp-packets">{{ stats.tcp_packets or 0 }}</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-info">
+                <h3>SYN Packets</h3>
+                <p class="stat-number" id="syn-packets">{{ stats.syn_packets or 0 }}</p>
+            </div>
+        </div>
+
+        <div class="stat-card alert-card">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-info">
+                <h3>Alerts Triggered</h3>
+                <p class="stat-number" id="alerts-triggered">{{ stats.alerts_triggered or 0 }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Alerts Table -->
+    <div class="alerts-section">
+        <h3>All Security Alerts</h3>
+        <div class="table-container">
+            <table class="alerts-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>TIMESTAMP</th>
+                        <th>ATTACK TYPE</th>
+                        <th>SEVERITY</th>
+                        <th>SOURCE IP</th>
+                        <th>SOURCE MAC</th>
+                        <th>DESTINATION IP</th>
+                        <th>DETAILS</th>
+                    </tr>
+                </thead>
+                <tbody id="alerts-tbody">
+                    {% if alerts %}
+                    {% for alert in alerts %}
+                    <tr class="severity-{{ alert.severity.lower() }}">
+                        <td>{{ alert.id }}</td>
+                        <td>{{ alert.timestamp }}</td>
+                        <td>{{ alert.attack_type.replace('_', ' ') }}</td>
+                        <td><span class="badge badge-{{ alert.severity.lower() }}">{{ alert.severity }}</span></td>
+                        <td>{{ alert.source_ip or 'N/A' }}</td>
+                        <td>{{ alert.source_mac or 'N/A' }}</td>
+                        <td>{{ alert.destination_ip or 'N/A' }}</td>
+                        <td>{{ alert.details[:100] }}...</td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="no-data">No alerts detected</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- User Management -->
+    <div class="users-section">
+        <h3>User Management</h3>
+        <div class="table-container">
+            <table class="users-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Admin</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.id }}</td>
+                        <td>{{ user.username }}</td>
+                        <td>{{ user.email }}</td>
+                        <td>{{ '✓' if user.is_admin else '✗' }}</td>
+                        <td>{{ user.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function startMonitoring() {
+        // Removed interface selection logic, sending default POST to use auto-detection
+        fetch('/api/monitoring/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ interface: "Auto" }) // Explicitly asking for Auto or just empty
+        })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.success) {
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to start monitoring. Make sure you have root/admin privileges.');
+            });
+    }
+
+    function stopMonitoring() {
+        fetch('/api/monitoring/stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.success) {
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to stop monitoring');
+            });
+    }
+
+    function clearAlerts() {
+        if (confirm('Are you sure you want to clear all alerts?')) {
+            fetch('/api/alerts/clear', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) {
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to clear alerts');
+                });
+        }
+    }
+
+    function clearStats() {
+        if (confirm('Are you sure you want to reset statistics?')) {
+            fetch('/api/stats/clear', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) {
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to clear statistics');
+                });
+        }
+    }
+
+    function updateConfig(event) {
+        event.preventDefault();
+
+        const formData = new FormData(event.target);
+        const data = {
+            syn_threshold: formData.get('syn_threshold'),
+            time_window: formData.get('time_window'),
+            arp_threshold: formData.get('arp_threshold'),
+            arp_time_window: formData.get('arp_time_window')
+        };
+
+        fetch('/api/config/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to update configuration');
+            });
+    }
+
+    // Function to update alerts table dynamically
+    function updateAlertsTable() {
+        console.log('[Alerts] Fetching alerts from API...');
+        fetch('/api/alerts?limit=50')
+            .then(response => {
+                console.log('[Alerts] Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('[Alerts] API response:', data);
+                if (data.success) {
+                    const tbody = document.getElementById('alerts-tbody');
+                    if (!tbody) {
+                        console.error('[Alerts] Alerts table body not found');
+                        return;
+                    }
+                    
+                    console.log('[Alerts] Found', data.alerts ? data.alerts.length : 0, 'alerts');
+                    
+                    if (!data.alerts || data.alerts.length === 0) {
+                        console.log('[Alerts] No alerts, showing empty message');
+                        tbody.innerHTML = '<tr><td colspan="8" class="no-data">No alerts detected</td></tr>';
+                        return;
+                    }
+                    
+                    // Build table rows from alerts
+                    const rows = data.alerts.map(alert => {
+                        const severityClass = alert.severity ? alert.severity.toLowerCase() : 'low';
+                        const attackType = alert.attack_type ? alert.attack_type.replace(/_/g, ' ') : 'Unknown';
+                        const details = alert.details ? (alert.details.length > 100 ? alert.details.substring(0, 100) + '...' : alert.details) : 'N/A';
+                        return `
+                            <tr class="severity-${severityClass}">
+                                <td>${alert.id || 'N/A'}</td>
+                                <td>${alert.timestamp || 'N/A'}</td>
+                                <td>${attackType}</td>
+                                <td><span class="badge badge-${severityClass}">${alert.severity || 'N/A'}</span></td>
+                                <td>${alert.source_ip || 'N/A'}</td>
+                                <td>${alert.source_mac || 'N/A'}</td>
+                                <td>${alert.destination_ip || 'N/A'}</td>
+                                <td>${details}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    
+                    console.log('[Alerts] Updating table with', data.alerts.length, 'rows');
+                    tbody.innerHTML = rows;
+                } else {
+                    console.error('[Alerts] API returned success=false:', data);
+                }
+            })
+            .catch(error => {
+                console.error('[Alerts] Error fetching alerts:', error);
+                // Don't clear the table on error - keep existing data
+                const tbody = document.getElementById('alerts-tbody');
+                if (tbody && tbody.children.length === 0) {
+                    // Only show error if table is empty
+                    tbody.innerHTML = '<tr><td colspan="8" class="no-data">Error loading alerts. Please refresh the page.</td></tr>';
+                }
+            });
+    }
+
+    // Auto-refresh statistics every 5 seconds
+    setInterval(function () {
+        fetch('/api/monitoring/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.statistics) {
+                    document.getElementById('total-packets').textContent = data.statistics.total_packets || 0;
+                    document.getElementById('arp-packets').textContent = data.statistics.arp_packets || 0;
+                    document.getElementById('tcp-packets').textContent = data.statistics.tcp_packets || 0;
+                    document.getElementById('syn-packets').textContent = data.statistics.syn_packets || 0;
+                    document.getElementById('alerts-triggered').textContent = data.statistics.alerts_triggered || 0;
+                }
+
+                // Update monitoring status
+                const statusIndicator = document.querySelector('.status-indicator');
+                if (data.is_running) {
+                    statusIndicator.textContent = 'ACTIVE';
+                    statusIndicator.className = 'status-indicator status-active';
+                } else {
+                    statusIndicator.textContent = 'INACTIVE';
+                    statusIndicator.className = 'status-indicator status-inactive';
+                }
+            })
+            .catch(error => console.error('Error fetching status:', error));
+    }, 5000);
+
+    // Auto-refresh alerts table every 5 seconds
+    setInterval(updateAlertsTable, 5000);
+    
+    // Initial load - delay slightly to ensure page is fully rendered
+    setTimeout(updateAlertsTable, 1000);
+</script>
+{% endblock %}
